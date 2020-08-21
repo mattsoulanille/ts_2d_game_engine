@@ -1,13 +1,17 @@
+//
 import * as PIXI from "pixi.js";
-import * as CTRL from "./controls";
+//import * as CTRL from "./controls";
 
 
 import 'pixi-display';
-import { traceOrtho, exampleScene, Ray, V3D, tracePersp, ColorImage, traceRefine } from "./render";
-import { rope, PVel, PNeut, PLinkage, GravityDecorator, TriBridge, Tube, FLinkage, stiffRope, Angle, QuaternionAngle, FAngleLinkage, FStiffLinkage } from "./PointPhysics";
-import { test } from "mocha";
+//import { traceOrtho, exampleScene, Ray, V3D, tracePersp, ColorImage, traceRefine } from "./render";
+//import { rope, PVel, PNeut, PLinkage, GravityDecorator, TriBridge, Tube, FLinkage, stiffRope, Angle, QuaternionAngle, FAngleLinkage, FStiffLinkage, addForce, FWind, FlatWind, Impulse } from "./PointPhysics";
+//import { test } from "mocha";
 //import { io } from 'socket.io-client';
+import { Gamestate, testState } from "./game";
+import { Trivector, CIETristimulus, linear_to_byte_gamma2_4, blackbody_wl, wlsToRGBColorMatrix, XYZofWavelength } from "./spectra";
 
+//var demoID = 0;
 
 const app = new PIXI.Application({
     resolution: window.devicePixelRatio || 1,
@@ -15,11 +19,124 @@ const app = new PIXI.Application({
     width: window.innerWidth,
     height: window.innerHeight
 });
-
+//pixi settings for pretty game
+PIXI.settings.SCALE_MODE = PIXI.SCALE_MODES.NEAREST;
 
 document.body.appendChild(app.view);
 
 
+
+
+var state: Gamestate = testState();
+app.stage.addChild(state.display);
+
+function update(delta: number) {
+    state.step(delta);
+}
+function start() {
+    state.attach(document);
+}
+
+/*
+//gunk to test hyperspectral rendering
+const g = new PIXI.Graphics();
+g.moveTo(10, 10);
+var w = new Trivector(0, 0, 0);
+for (let i = 300; i < 800; i++) {
+    w = w.plus(CIETristimulus(i).times(blackbody_wl(5500, i * 1e-9)));
+}
+w = w.normalize().times(.5);
+
+for (let wl = 300; wl < 800; wl++) {
+    const c = w.plus(CIETristimulus(wl).times(.5)).matrix(Trivector.tri_to_rgb).map(linear_to_byte_gamma2_4).bound(0, 1);
+    g.lineStyle(5, c.color());
+    g.lineTo(10 + wl - 300 + 1, 10);
+}
+for (let t = 300; t < 50000; t += 50) {
+    var c = new Trivector(0, 0, 0);
+    if (t < 25000) {
+        for (let i = 300; i < 800; i += 5) {
+            c = c.plus(CIETristimulus(i).times(blackbody_wl(t, i * 1e-9) / (160 - 60)));
+        }
+    } else {
+        for (let i = 300; i < 800; i += 5) {
+            c = c.plus(XYZofWavelength(i).times(blackbody_wl(t - 25000 + 300, i * 1e-9) / (160 - 60)));
+        }
+    }
+    const oc = c;
+    g.moveTo(10 + t / 50 - 6 + 1, 20)
+    for (let f = 0; f < 64; f++) {
+        if (t < 25000) {
+            g.lineStyle(1, c.matrix(Trivector.tri_to_rgb).bound(0, 1).map(linear_to_byte_gamma2_4).color());
+        } else {
+            g.lineStyle(1, c.matrix(Trivector.XYZtoRGB).bound(0, 1).map(linear_to_byte_gamma2_4).color());
+        }
+        g.lineTo(10 + t / 100 - 3 + 1, 21 + f);
+        c = c.times(.5);
+    }
+    var nc = oc.divide(oc.y / 32);
+    for (let i = 1; i < 11; i++) {
+        if (t < 25000) {
+            g.lineStyle(1, nc.matrix(Trivector.tri_to_rgb).bound(0, 1).map(linear_to_byte_gamma2_4).color());
+        } else {
+            g.lineStyle(1, nc.matrix(Trivector.XYZtoRGB).bound(0, 1).map(linear_to_byte_gamma2_4).color());
+        }
+        g.lineTo(10 + t / 100 - 3 + 1, 21 + 64 + i * 5);
+        nc = nc.divide(2);
+    }
+}
+
+app.stage.addChild(g);
+
+const wls = [780, 730, 680, 630, 580, 530, 480, 430, 380];
+const hg = [new PIXI.Graphics(), new PIXI.Graphics(), new PIXI.Graphics()];
+const hgc = new PIXI.Container();
+for (let gi = 0; gi < hg.length; gi++) {
+    hgc.addChild(hg[gi])
+    const g = hg[gi];
+
+
+    const flt = new PIXI.filters.ColorMatrixFilter();
+    flt.blendMode = PIXI.BLEND_MODES.ADD;
+    console.log(XYZofWavelength(wls[gi * 3]));
+    console.log(XYZofWavelength(wls[gi * 3 + 1]));
+    console.log(XYZofWavelength(wls[gi * 3 + 2]));
+    flt.matrix = wlsToRGBColorMatrix(wls[gi * 3], wls[gi * 3 + 1], wls[gi * 3 + 2]).scale3x3(4).m;
+    console.log(flt.matrix);
+
+    g.filters = [flt];
+    let y = 400;
+    for (let gain = .25; gain < 2; gain *= 2) {
+        g.moveTo(10, y);
+        for (let ci = 0; ci < 512; ci++) {
+            g.lineStyle(4, PIXI.utils.rgb2hex([((ci >> (gi * 3)) % 2) * gain, ((ci >> (gi * 3 + 1)) % 2) * gain, ((ci >> (gi * 3 + 2)) % 2) * gain]));
+            g.lineTo(11 + ci, y);
+        }
+        y += 5;
+    }
+
+    y += 5;
+    for (let ti = 0; ti < 512; ti++) {
+        const t = 300 + (25000 - 300) * (ti / 511);
+        var wles = new Trivector(blackbody_wl(t, wls[gi * 3] * 1e-9), blackbody_wl(t, wls[gi * 3 + 1] * 1e-9), blackbody_wl(t, wls[gi * 3 + 2] * 1e-9));
+        g.moveTo(10 + ti, y)
+        wles = wles.times(1024);
+        for (let n = 1; n < 64; n++) {
+            g.lineStyle(1, wles.bound(0, 1).color());
+            g.lineTo(10 + ti, y + n);
+            wles = wles.divide(2);
+        }
+    }
+}
+
+app.stage.addChild(hgc);
+
+
+*/
+
+
+
+/*
 
 const style = new PIXI.TextStyle({
     fill: "#ffffff"
@@ -81,18 +198,49 @@ Rsphere.position.x = 400;
 Rsphere.position.y = 400;
 
 //app.stage.addChild(Rsphere);
+function gcd(a: number, b: number): number {
+    if (a < b) {
+        return gcd(b, a);
+    } else {
+        if (b == 0) {
+            return a;
+        } else {
+            return gcd(b, a % b);
+        }
+    }
+}
 
-const samplesPerRound = 1;
-const stepsPerRound = 50;
-//var res: ColorImage = tracePersp(exampleScene, new Ray(new V3D(0, 0, -4), new V3D(-1.5, -1.5, 1)), new V3D(3, 0, 0), new V3D(0, 3, 0), 1 / 128 / 8, 1 / 128 / 8, 30, 1);
+function getNearestCover(n: number, f = (1 + Math.sqrt(5)) / 2): number {
+    if (n == 1) { return 0; }
+    var guess = Math.floor(n * f);
+    while (gcd(guess, n) != 1) {
+        guess++;
+    }
+    return guess % n;
+}
+
+const imageSize = 512;
+const samplesPerRound = 20;
+const stepsPerRound = 5;
+const undersample = 8;
+console.log("computing step");
+const undersampleStep = getNearestCover(undersample * undersample);
+console.log("making image");
+var res: ColorImage = tracePersp(exampleScene, new Ray(new V3D(0, 0, -4), new V3D(-1.5, -1.5, 1)), new V3D(3, 0, 0), new V3D(0, 3, 0), 1 / imageSize, 1 / imageSize, 30, 1);
+console.log("image made");
 
 const tubeC = 6;
 const tubeL = 10;
 
 //var rope1 = Tube(tubeC, 60, tubeL, 10, 1, 1000, 1, 100);
-var rope1 = stiffRope(24, [15, 0, 0], 20, 200, 10, 0, -50);
+var rope1 = stiffRope(24, [15, 0, 0], 20, 200, 10, 10, 0, -50, 1);
+
+
+addForce(rope1, new FWind(new FlatWind(), 0.01))
 
 const r = rope1[0].a.plusV([1, 1, 1], 1);
+
+
 
 //rope1[1].p.vy = 1;
 //rope1[1].p.vz = 1;
@@ -102,10 +250,11 @@ const r = rope1[0].a.plusV([1, 1, 1], 1);
 //console.log(new QuaternionAngle(.5, .5, .5, .5).axisAngle()); 
 //console.log(new QuaternionAngle(1,  0, 1, 0).times(new QuaternionAngle(1, 0.5, .5, 0.75)));
 
-/*rope1[0].p = new PNeut(0, 0, 0, 1, [new FStiffLinkage(rope1[1], [-10, 0, 0], new QuaternionAngle(), (((rope1[1].p as GravityDecorator).p as PNeut).f[0] as FStiffLinkage).stiffness
+/*
+rope1[0].p = new PNeut(0, 0, 0, 1, [new FStiffLinkage(rope1[1], [-10, 0, 0], new QuaternionAngle(), (((rope1[1].p as GravityDecorator).p as PNeut).f[0] as FStiffLinkage).stiffness
     , 10,
     (((rope1[1].p as GravityDecorator).p as PNeut).f[0] as FStiffLinkage).dampening,
-    (((rope1[1].p as GravityDecorator).p as PNeut).f[0] as FStiffLinkage).dampening2, -100)], [0, 0, 0], 100);*/
+    (((rope1[1].p as GravityDecorator).p as PNeut).f[0] as FStiffLinkage).dampening2, -100)], [0, 0, 0], 100);// * /
 
 //rope1 = rope1.reverse();
 //rope1.pop();
@@ -127,12 +276,12 @@ for (var i = 1; i < rope1.length; i++) {
     //(rope1[i].p as PNeut).mass = 500 - i;
     //rope1[i].x = 0;//i % 2;
     //rope1[i].y = i;//i % 2;
-    ((rope1[i].p as GravityDecorator).p as PNeut).I = 25 / 1;
-    ((rope1[i].p as GravityDecorator).p as PNeut).mass = 1 / 1;
+    (rope1[i].p as PNeut).I = 25 / 1;
+    (rope1[i].p as PNeut).mass = 1 / 1;
 	/*if (i > 0) {
                 (rope1[i].p as GravityDecorator).gy = Math.sin((i / 50) + t * t * 0.01);
                 (rope1[i].p as GravityDecorator).gx = Math.cos((i / 50) + t * t * 0.01);
-            }*/
+            }* /
 }
 //(rope1[499].p as PVel).vy = -30;
 //(rope1[249].p as PVel).vy = 30;
@@ -146,7 +295,7 @@ Rscene.addChild(exampleText);
 
 app.stage.addChild(Rscene);
 
-const speed = 20;
+const speed = 8;
 
 
 
@@ -191,7 +340,9 @@ const ctrls = new CTRL.Key4Control("KeyW",
     "KeyA",
     "KeyS",
     "KeyD");
-
+const relax = new CTRL.KeyControl("KeyZ");
+const more = new CTRL.KeyControl("KeyF");
+const twist = new CTRL.KeyControl("KeyT");
 
 function doSimStep(): number {
     //for (var j = 0; j < ovc; j++) {
@@ -208,16 +359,23 @@ function doSimStep(): number {
         for (var i = 1; i < rope1.length; i++) {
             //(((rope1[i].p as GravityDecorator).p as PNeut).f[0] as FStiffLinkage).angle = (((rope1[i].p as GravityDecorator).p as PNeut).f[0] as FStiffLinkage).angle.plusV([0, 0.001, 0], dscale * delta / ovc) as QuaternionAngle;
         }
-    }//*/
+    }// * /
 
 
 
     const v = ctrls.value();
     for (var i = 1; i < rope1.length; i++) {
-        (((rope1[i].p as GravityDecorator).p as PNeut).f[0] as FStiffLinkage).angle = new QuaternionAngle().plusV([0, v[0], v[1]], 0.1) as QuaternionAngle;
+        ((rope1[i].p as PNeut).f[0] as FStiffLinkage).angle = new QuaternionAngle().plusV([0, v[0], v[1]], more.value() ? 0.3 : 0.1) as QuaternionAngle;
+    }
+    for (var i = 1; i < rope1.length; i++) {
+        ((rope1[i].p as PNeut).f[0] as FStiffLinkage).angleStiffness = relax.value() ? 20 : 200;
     }
 
+    if (twist.value()) {
+        const r = rope1[rope1.length - 1].a.apply(10, 0, 0);
+        (rope1[rope1.length - 1].p as PNeut).addImpulse(new Impulse(0, 0, 0, r[0], r[1], r[2]));
 
+    }
 
 
 
@@ -238,7 +396,7 @@ function doSimStep(): number {
         for (var n = 0; n < ((rope1[i].p as GravityDecorator).p as PNeut).f.length; n++) {
             (((rope1[i].p as GravityDecorator).p as PNeut).f[n] as FLinkage).l *= 1 - delta / ovc * (i / rope1.length * i / rope1.length * i / rope1.length / 1000);
         }
-    }*/
+    }* /
     //(rope1[499].p as GravityDecorator).gx += Math.random() - .5;
     //(rope1[499].p as GravityDecorator).gy += Math.random() - .5;//(rope1[499].p as PVel).vy;
     //point(t / 14, t / 51, t / 40)
@@ -349,6 +507,7 @@ function render(): void {
 
 
 
+        /*
         if (i >= tubeC) {
             for (var n = 0; n < ((rope1[i].p as GravityDecorator).p as PNeut).f.length; n++) {
                 Rscene.lineStyle(1, 255 * (((n + 1) & 1) + 256 * (((n + 1) & 2) + 256 * ((n + 1) & 4))), 0.2);
@@ -357,41 +516,71 @@ function render(): void {
                 Rscene.moveTo(rope1[i].x, rope1[i].y);
 
             }
-        }
+        }//* /
     }
     //exampleText.rotation += delta / 100 + delta * exampleText.rotation / 100;
     //Rsphere.rotation += delta / 100;
     //Rsphere.position.x = (Rsphere.position.x % 0.5) + 400.25;
     //Rsphere.position.y = (Rsphere.position.y % 0.5) + 400.125;
 
-    //app.stage.removeChild(Rscene);
-    //    traceRefine(exampleScene, res, stepsPerRound, samplesPerRound);
 
-    //Rscene = res.get(.5);
-    //app.stage.addChild(Rscene);
     exampleText.text = String(t);
 
 }
 
 
 
-function update(delta: number) {
-    Rscene.clear();
-    //rope1[0].y = mousePosition[1];
+var timer = new PIXI.Text("0", style);
 
+timer.x = 50;
+timer.y = 50;
 
-    Rscene.moveTo(0, 0);
-    unsimulatedTime += delta;
-    while (unsimulatedTime > 0) {
-        unsimulatedTime -= doSimStep();
-    }
-    render();
+var RScenes: PIXI.Graphics[];
+if (demoID === 0) {
+    app.stage.addChild(timer);
+    RScenes = [];
 }
 
+var offset = 0;
+
+function update(delta: number) {
+    if (demoID === 0) {
+
+
+        //app.stage.removeChild(Rscene);
+        const t = new Date().getTime();
+        traceRefine(exampleScene, res, stepsPerRound, samplesPerRound, true, undersample, offset);
+        const t2 = new Date().getTime();
+        Rscene = res.get(1, undersample, offset);
+        Rscene.x = 100;
+        Rscene.y = 100;
+        if (RScenes[offset] != null) {
+            app.stage.removeChild(RScenes[offset])
+        }
+        RScenes[offset] = Rscene;
+        app.stage.addChild(Rscene);
+        timer.text = String(t2 - t);
+        offset += undersampleStep;
+
+    }
+    if (demoID === 1) {
+        Rscene.clear();
+        //rope1[0].y = mousePosition[1];
+        Rscene.moveTo(0, 0);
+        unsimulatedTime += delta;
+        while (unsimulatedTime > 0) {
+            unsimulatedTime -= doSimStep();
+        }
+        render();
+    }
+
+}
+*/
 
 
 async function startGame() {
     //    io.Socket.emit("testConsoleLog", "Hello from client");
+    start();
     app.ticker.add(update);
 
 }

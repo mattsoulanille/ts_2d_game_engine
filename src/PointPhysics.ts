@@ -1,4 +1,5 @@
 import * as PIXI from "pixi.js";
+import { fork } from "cluster";
 //import * as q from "quaternion.js";
 
 
@@ -390,6 +391,17 @@ class PLinkage extends PNeut {
 
     }
 }
+class FGrav implements Force {
+    constructor(public I = new Impulse()) { }
+    doForce(p: PPoint3d, dt: number): void {
+        p.p.va[0] += this.I.iax * dt;
+        p.p.va[1] += this.I.iay * dt;
+        p.p.va[2] += this.I.iaz * dt;
+        p.p.vx += this.I.ix * dt;
+        p.p.vy += this.I.iy * dt;
+        p.p.vz += this.I.iz * dt;
+    }
+}
 
 
 class FLinkage implements Force {
@@ -591,6 +603,10 @@ class FAngleLinkage implements Force {
     constructor(public link: PPoint3d, public a1: Angle = defaultAngle, public a2: Angle = defaultAngle, public stiffness = 1, public dampening = 0, public dampening2 = 0) { }
 }
 
+function vdot(a: number[], b: number[]): number {
+    return dot(a[0], a[1], a[2], b[0], b[1], b[2]);
+}
+
 class FStiffLinkage implements Force {
     doForce(p: PPoint3d, dt: number): void {
 
@@ -613,10 +629,15 @@ class FStiffLinkage implements Force {
         // angular torque
         const r = (this.link.a.plus(this.angle).minus(p.a) as QuaternionAngle).axisAngle();
         const va = [this.link.p.va[0] - p.p.va[0], this.link.p.va[1] - p.p.va[1], this.link.p.va[2] - p.p.va[2]];
-
+        //find twisty component
+        //twisty = component parallel to trnsfrmed len = NormLen * nl dot r
+        const twistyForceFact = vdot(r, rp) * this.twistStiffness * dt;
+        //twisty vel = va dot rp
+        const twistyDampFact = vdot(va, rp) * dt * this.twistDamping;
+        const twistyFact = twistyForceFact + twistyDampFact;
 
         const I = new Impulse(f * dx - vx * f2, f * dy - vy * f2, f * dz - vz * f2);
-        const I2 = new Impulse(0, 0, 0, this.angleStiffness * dt * r[0] - this.angleDampening * dt * va[0], this.angleStiffness * dt * r[1] - this.angleDampening * dt * va[1], this.angleStiffness * dt * r[2] - this.angleDampening * dt * va[2]);
+        const I2 = new Impulse(0, 0, 0, this.angleStiffness * dt * r[0] + rp[0] * twistyFact - this.angleDampening * dt * va[0], this.angleStiffness * dt * r[1] + rp[1] * twistyFact - this.angleDampening * dt * va[1], this.angleStiffness * dt * r[2] + rp[2] * twistyFact - this.angleDampening * dt * va[2]);
 
         internalImpulse(p, this.link, I);
         internalImpulse(this.link, p, I2);
@@ -624,7 +645,7 @@ class FStiffLinkage implements Force {
 
 
     }
-    constructor(public link: PPoint3d, public len = [1, 0, 0], public angle = new QuaternionAngle(), public stiffness = 1, public angleStiffness = 1, public dampening = 0, public dampening2 = 0, public angleDampening = 0) { }
+    constructor(public link: PPoint3d, public len = [1, 0, 0], public angle = new QuaternionAngle(), public stiffness = 1, public angleStiffness = 1, public twistStiffness = 1, public dampening = 0, public dampening2 = 0, public angleDampening = 0, public twistDamping = 0) { }
 }
 
 
@@ -658,7 +679,40 @@ class CombinePhysics implements Physics {
 }
 */
 
-const g = 0.01;
+class FlowPoint {
+    constructor(public vx = 0, public vy = 0, public vz = 0,
+        public vax = 0, public vay = 0, public vaz = 0, ) { }
+}
+
+
+interface WindField {
+    getFlow(p: PPoint3d): FlowPoint;
+}
+class FlatWind implements WindField {
+    constructor(public wind = new FlowPoint()) { }
+    getFlow(_p: PPoint3d): FlowPoint {
+        return this.wind;
+    }
+}
+class FWind implements Force {
+    doForce(p: PPoint3d, dt: number): void {
+        const f = this.wind.getFlow(p);
+        const i = new Impulse(f.vx - p.p.vx, f.vy - p.p.vy, f.vz - p.p.vz,
+            f.vax - p.p.va[0], f.vay - p.p.va[1], f.vaz - p.p.va[2]);
+        p.p.addImpulse(i.scale(dt * this.strength));
+    }
+    constructor(public wind: WindField = new FlatWind, public strength = 0.1) { }
+}
+
+
+
+
+
+
+
+
+
+const g = 0.0025;
 function Tube(circ: number, links: number, len = 1, s = 1, d = 1, sc = 1, dc = 1, sups = 0, supd = 1, ): PPoint3d[] {
     var points: PPoint3d[] = [];
     const r = len / (2 * Math.sin(Math.PI / circ));
@@ -730,10 +784,10 @@ function stiffRopeNoAngle(links: number, len = 1, slen = 1, s = 1, d = 1, stiff 
     }
     return points;
 }
-function stiffRope(links: number, len = [1, 0, 0], s = 1, s2 = 1, d = 1, d2 = 1, d3 = 1): PPoint3d[] {
+function stiffRope(links: number, len = [1, 0, 0], s = 1, s2 = 1, s3 = 0, d = 1, d2 = 1, d3 = 1, d4 = 0): PPoint3d[] {
     var points = [new PPoint3d(0, 0, 0, new noPhysics())];
     for (var i = 1; i < links; i++) {
-        points.push(new PPoint3d(i * len[0], i * len[1], i * len[2], new GravityDecorator(0, g, 0, new PNeut(0, 0, 0, 1, [new FStiffLinkage(points[points.length - 1], len, new QuaternionAngle(), s, s2, d, d2, d3)]))));
+        points.push(new PPoint3d(i * len[0], i * len[1], i * len[2], new PNeut(0, 0, 0, 1, [new FStiffLinkage(points[points.length - 1], len, new QuaternionAngle(), s, s2, s3, d, d2, d3, d4), new FGrav(new Impulse(0, g, 0))])));
         if (i > 1) {
             //((points[points.length - 2].p as GravityDecorator).p as PNeut).f.push(new FStiffLinkage(points[points.length - 1], [-len[0], -len[1], -len[2]], new QuaternionAngle(), s, 0, d, d2, 0));
         }
@@ -741,10 +795,22 @@ function stiffRope(links: number, len = [1, 0, 0], s = 1, s2 = 1, d = 1, d2 = 1,
     return points;
 }
 
+function addForce(ps: PPoint3d[], f: Force) {
+    for (var i = 0; i < ps.length; i++) {
+        if (ps[i].p instanceof PNeut) {
+            (ps[i].p as PNeut).f.push(f);
+        }
+    }
+}
+
+
 //debugger;
 export {
     Physics, noPhysics, Angle, QuaternionAngle,
     rope, PVel, PNeut, PLinkage, GravityDecorator, //CombinePhysics,
-    TriBridge, Tube, FLinkage, stiffRope, Impulse, Hinge, FAngleLinkage, FStiffLinkage
+    TriBridge, Tube, FLinkage, stiffRope, Impulse, Hinge, FAngleLinkage, FStiffLinkage,
+    Force, addForce,
+    FWind, FlowPoint, WindField, FlatWind,
+
 }
 
