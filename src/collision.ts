@@ -1,4 +1,4 @@
-import { Vec, Pointy } from "./physics";
+import { Vec, Pointy, Line } from "./physics";
 //colision stuff
 // All colisions will be built off the primitive:
 //      moving line segment collide with moving point
@@ -237,7 +237,11 @@ function collideLines(l1: Vec, l2: Vec, l1n: Vec, l2n: Vec, l3: Vec, l4: Vec, l3
 
 
 //colision shapes are polylines
-// for static shapes, they are stored as sets of convexhulls for speed
+interface Collidable {
+
+}
+
+// for static shapes, they can be stored as sets of convexhulls for speed
 
 class Colmesh {
     hulls: Array<Convexhull>;
@@ -358,59 +362,10 @@ class Convexhull {
     }
 }
 
-class Line {
-    constructor(public a: Vec, public b: Vec) { }
-
-    get d(): Vec {
-        return this.b.minus(this.a);
-    }
-    set d(v: Vec) {
-        this.b = v.plus(this.a);
-    }
-
-    side(p: Pointy): boolean {
-        return this.a.rminus(p).cross(this.d) > 0;
-    }
-    uv(p: Pointy): Vec {
-        const p0 = this.a.rminus(p);
-        return this.d.uv(p0);
-    }
-    xy(p: Pointy): Vec {
-        return this.a.plus(this.d.xy(p));
-    }
-
-    st(l: Line): Vec {
-        //(s,t) where
-        // s*d+a = t*e+c
-        // s*d-t*e = c-a
-        // make orthogonal
-        const d = this.d;
-        const e = l.d;
-        const common = d.dot(e);
-        const dm = d.mag2;
-        const f = common / dm;
-        e.decrement(d.scale(-f));
-        //e` = e-d*(d•e)/(d•d)
-        //e`•d = e•d-(d*(d•e)/(d•d))•d
-        //     = e•d-d•e = 0
-        const k = l.a.minus(this.a);
-        const s_ = d.dot(k) / dm;
-        const em = e.mag2;
-        const t_ = e.dot(k) / em;
-        //s`d+t`e` = c-a
-        //s`d+t`(e-d*(d•e)/(d•d)) = c-a
-        //s`d+t`e-t`(d•e)/(d•d)*d = c-a
-        //(s`-t`(d•e)/(d•d))d+t`e = c-a
-        //s = (s`-t`f),t=-t`
-        return new Vec(s_ - t_ * f, -t_);
-    }
-
-}
-
 
 
 
 export {
-    collideLines, collide, Line,
+    collideLines, collide, Collidable
 
 }

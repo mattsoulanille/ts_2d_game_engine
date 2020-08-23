@@ -1,7 +1,6 @@
 import * as PIXI from "pixi.js";
 import { Input, InputType } from "./input";
-import { Physical, Vec } from "./physics";
-import { Line, collide } from "./collision";
+import { Line, Physical, Vec } from "./physics";
 
 interface Player {
     control: (i: Input) => void;
@@ -96,6 +95,4 @@ class TestPlayer implements Player, Physical {
 
 }
 
-export {
-    Player, TestPlayer
-}
+export { Player, TestPlayer };

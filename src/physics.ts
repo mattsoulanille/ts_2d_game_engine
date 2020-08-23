@@ -1,10 +1,11 @@
 //
 import * as PIXI from "pixi.js";
+import { Gamestate } from "./game";
 
 
 
 interface Physical {
-    step: () => void;
+    step: (g: Gamestate) => void;
 }
 
 class Ballistic implements Physical {
@@ -16,7 +17,7 @@ class Ballistic implements Physical {
         this.vel = new Vec();
         this.acc = new Vec();
     }
-    step() {
+    step(_g: Gamestate) {
         this.pos.increment(this.vel);
         this.vel.increment(this.acc);
     }
@@ -291,7 +292,56 @@ class Vec extends PIXI.Point {
 
 }
 
+class Line {
+    constructor(public a: Vec, public b: Vec) { }
 
+    get d(): Vec {
+        return this.b.minus(this.a);
+    }
+    set d(v: Vec) {
+        this.b = v.plus(this.a);
+    }
+
+    side(p: Pointy): boolean {
+        return this.a.rminus(p).cross(this.d) > 0;
+    }
+    uv(p: Pointy): Vec {
+        const p0 = this.a.rminus(p);
+        return this.d.uv(p0);
+    }
+    xy(p: Pointy): Vec {
+        return this.a.plus(this.d.xy(p));
+    }
+
+    st(l: Line): Vec {
+        //(s,t) where
+        // s*d+a = t*e+c
+        // s*d-t*e = c-a
+        // make orthogonal
+        const d = this.d;
+        const e = l.d;
+        const common = d.dot(e);
+        const dm = d.mag2;
+        const f = common / dm;
+        e.decrement(d.scale(-f));
+        //e` = e-d*(d•e)/(d•d)
+        //e`•d = e•d-(d*(d•e)/(d•d))•d
+        //     = e•d-d•e = 0
+        const k = l.a.minus(this.a);
+        const s_ = d.dot(k) / dm;
+        const em = e.mag2;
+        const t_ = e.dot(k) / em;
+        //s`d+t`e` = c-a
+        //s`d+t`(e-d*(d•e)/(d•d)) = c-a
+        //s`d+t`e-t`(d•e)/(d•d)*d = c-a
+        //(s`-t`(d•e)/(d•d))d+t`e = c-a
+        //s = (s`-t`f),t=-t`
+        return new Vec(s_ - t_ * f, -t_);
+    }
+
+}
+
+//class PhysicalLine
 
 
 
@@ -300,6 +350,6 @@ class Vec extends PIXI.Point {
 
 export {
     Physical,
-    Vec, mod, pseudoSine, pseudoCosine,
+    Vec, mod, pseudoSine, pseudoCosine, Line,
     Pointy,
 }

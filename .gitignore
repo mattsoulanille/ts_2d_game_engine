@@ -16,3 +16,4 @@ static
 *.log
 *.out
 design/auto/
+*.js

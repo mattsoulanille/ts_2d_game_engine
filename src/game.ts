@@ -3,6 +3,7 @@ import * as PIXI from "pixi.js";
 import { Input, InputListener } from "./input";
 import { Player, TestPlayer } from "./player";
 import { Physical } from "./physics";
+import { Collidable } from "./collision";
 
 
 class Gamestate {
@@ -11,6 +12,7 @@ class Gamestate {
     past: Array<Array<Input>>;
     players: Array<Player>;
     physicsObjects: Array<Physical>;
+    colisionObjects: Array<Collidable>;
     display: PIXI.Container;
 
     debugText: PIXI.Text;
@@ -20,6 +22,7 @@ class Gamestate {
         this.inputs = new InputListener();
         this.players = [];
         this.physicsObjects = [];
+        this.colisionObjects = [];
         this.display = new PIXI.Container();
 
         //debuginfo
@@ -54,7 +57,7 @@ class Gamestate {
     }
     physics() {
         for (var po of this.physicsObjects) {
-            po.step();
+            po.step(this);
         }
     }
 }
