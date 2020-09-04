@@ -8,3 +8,15 @@ import { Trivector, CIETristimulus, linear_to_byte_gamma2_4, blackbody_wl, wlsTo
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+

@@ -4,6 +4,14 @@ import { Gamestate } from "./game";
 
 
 
+
+
+
+
+
+
+
+
 interface Physical {
     step: (g: Gamestate) => void;
 }
@@ -52,6 +60,26 @@ function mod(a: number, b: number) {
     return ((a % b) + b) % b;
 }
 
+export function vecify(p: Pointy) { return new Vec(p.x, p.y); }
+
+
+
+export function vec_iir(a: number[], b0: number, b: number[], state: Pointy[], inp: Vec) {
+    const s = inp.copy();
+    for (let i in a)
+        s.decrement(vecify(state[i]).scale(a[i]));
+    const r = s.times(b0);
+    for (let i in b)
+        r.increment(vecify(state[i]).scale(b[i]));
+    for (let i = state.length - 1; i > 0; i--) {
+        state[i].x = state[i - 1].x;
+        state[i].y = state[i - 1].y;
+    }
+    s.setTo(state[0]);
+    return r;
+}
+
+
 class Vec extends PIXI.Point {
     constructor(x: number | undefined = undefined, y: number | undefined = undefined) { super(x, y); }
     clone() {
@@ -64,6 +92,10 @@ class Vec extends PIXI.Point {
         this.x = o.x;
         this.y = o.y;
     }
+    setTo(o: Pointy) {
+        o.x = this.x;
+        o.y = this.y;
+    }
     //nicies
     get mag2(): number {
         return this.dot(this);
@@ -72,7 +104,8 @@ class Vec extends PIXI.Point {
         this.normalize(Math.sqrt(n));
     }
     get mag(): number {
-        return Math.sqrt(this.mag2);
+        return Math.hypot(this.x, this.y);
+        //return Math.sqrt(this.mag2);
     }
     set mag(n: number) {
         this.normalize(n);
@@ -117,11 +150,31 @@ class Vec extends PIXI.Point {
     cross(o: Pointy) {
         return this.x * o.y - this.y * o.x;
     }
+    funcMag(mf: (m: number) => number) {
+        const m = this.mag;
+        const r = mf(m);
+        if (m == 0) {
+            this.x = r;
+            this.y = 0;
+            return this;
+        }
+        const f = r / m;
+        this.x *= f;
+        this.y *= f;
+        return this;
+    }
     normalize(m = 1): Vec {
         if ((this.x == 0 && this.y == 0) || m == 0) {
             this.x = m;
+            this.y = 0;
             return this;
         }
+        const h = this.mag;
+        const f = m / h;
+        this.x *= f;
+        this.y *= f;
+        return this;
+		/*
         const mag2 = this.dot(this);
         if (mag2 == 0) {
             return this.scale(1 / ROOT_ZERO).normalize(m);
@@ -145,6 +198,7 @@ class Vec extends PIXI.Point {
             return this.scale(ROOT_ZERO).normalize(m);
         }
         return this.scale(m / Math.sqrt(mag2));
+		*/
     }
     normalized(m = 1) {
         return this.clone().normalize(m);
@@ -247,6 +301,16 @@ class Vec extends PIXI.Point {
         return new Vec(Math.ceil(this.x), Math.ceil(this.y));
     }
 
+    gt(o: Pointy) {
+        return this.x > o.x && this.y > o.y;
+    }
+    lt(o: Pointy) {
+        return this.x < o.x && this.y < o.y;
+    }
+    between(lo: Pointy, hi: Pointy) {
+        return this.gt(lo) && this.lt(hi);
+    }
+
     vmod(o: Pointy) {
         return this.func(mod, o);
     }
@@ -338,6 +402,40 @@ class Line {
         //s = (s`-t`f),t=-t`
         return new Vec(s_ - t_ * f, -t_);
     }
+    lerp(l: Line, t: number) {
+        return new Line(this.a.lerp(l.a, t), this.b.lerp(l.b, t));
+    }
+    t(t: number): Vec {
+        return this.a.lerp(this.b, t);
+    }
+    increment(o: Line) {
+        this.a.increment(o.a);
+        this.b.increment(o.b);
+        return this;
+    }
+    plus(o: Line) {
+        return new Line(this.a.plus(o.a), this.b.plus(o.b));
+    }
+    decrement(o: Line) {
+        this.a.decrement(o.a);
+        this.b.decrement(o.b);
+        return this;
+    }
+    minus(o: Line) {
+        return new Line(this.a.minus(o.a), this.b.minus(o.b));
+    }
+    rminus(o: Line) {
+        return new Line(this.a.rminus(o.a), this.b.rminus(o.b));
+    }
+    chs() {
+        return new Line(this.a.chs(), this.b.chs());
+    }
+    //negative() { return this.chs(); }
+    negate() {
+        this.a.negate(); this.b.negate();
+        return this;
+    }
+
 
 }
 

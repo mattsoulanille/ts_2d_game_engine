@@ -2,7 +2,7 @@ import { Pointy, Vec, mod } from "./physics";
 
 
 
-function* thickLine(a: Pointy, b: Pointy, s: number = 1): IterableIterator<Vec> {
+export function* thickLine(a: Pointy, b: Pointy, s: number = 1): IterableIterator<Vec> {
     a = new Vec(a.x, a.y).unscale(s);
     b = new Vec(b.x, b.y).unscale(s);
     const diry = a.y > b.y ? -1 : 1;
@@ -23,8 +23,11 @@ function* thickLine(a: Pointy, b: Pointy, s: number = 1): IterableIterator<Vec> 
     }
 }
 
+export function* thickRect(l: Pointy, h: Pointy, s = 1): IterableIterator<Vec> {
+    const lv = new Vec(l.x, l.y).unscale(s).floor();
+    const hv = new Vec(h.x, h.y).unscale(s).floor();
+    for (let y = lv.y; y <= hv.y; y++)
+        for (let x = lv.x; x <= hv.x; x++)
+            yield new Vec(x, y);
 
-
-export {
-    thickLine
 }

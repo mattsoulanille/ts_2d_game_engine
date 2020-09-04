@@ -1,4 +1,4 @@
-import { Vec, Pointy, Line } from "./physics";
+import { Line, Pointy, Vec } from "./physics";
 //colision stuff
 // All colisions will be built off the primitive:
 //      moving line segment collide with moving point
@@ -6,42 +6,283 @@ import { Vec, Pointy, Line } from "./physics";
 //     
 // colision between moving lines is thus simply the min
 //   of the collide of each endpoint agains the other line
+
+
+function line_point_collide(al: Line, bl: Line, p: Vec, pn: Vec, epsilon = 1e-10): number | undefined {
+    const l = new Line(al.a, bl.a);
+    const ln = new Line(al.b, bl.b);
+    //const pl = new Line(p, pn);
+	/*
+	  let l(t) = lerp(l,ln,t)
+	  let p(t) = lerp(p,pn,t)
+	  s,t such that l(t).a+l(t).d*s = p(t)
+	  
+	  uv(t) = ((p(t)-l(t).a)•l(t).d,(p(t)-l(t).a) x l(t).d)/|l(t).d|^2
+	  
+	  v(t) = (p(t)-l(t).a)xl(t).d/|l(t).d|^2 
+
+
+	    with rh rule for cross, and ccw wound hulls:
+		  v > 0 when inside
+     so, for an entering colision:
+	  t s.t. v(t) = 0 and v`(t) > 0
+	  (p(t)-l(t).a)xl(t).d = 0
+	  let p = p(0), P = p(1)-p(0),etc
+	  
+	  (p+t*P-(a+A*t))x(d+D*t) = 0
+	  (p-a+t*(P-A))x(d+D*t) = 0
+	  (p-a)x(d) + ((p-a)x(D) + (P-A)x(d))t + (P-A)x(D)t^2 = 0
+	  
+	  sign(v`(t)):
+	  since |l(t).d|^2 > 0, = sign(d/dt (v(t)*|l(t).d|^2))
+	   = d/dt ((p-a)x(d) + ((p-a)x(D) + (P-A)x(d))t + (P-A)x(D)t^2)
+	   = ((p-a)x(D) + (P-A)x(d)) + 2*(P-A)x(D)t > 0
+	   = b+2at > 0
+	*/
+    const P_A = pn.minus(ln.a);
+    const p_a = p.minus(l.a);
+    const a = P_A.cross(ln.d);
+    const b = (p_a.cross(ln.d) + P_A.cross(l.d));
+    const c = p_a.cross(l.d);
+    //t = (-b±√(b^2-4ac))/(2a)
+    if (Math.abs(a) <= epsilon)
+        //linear, so t = -c/b
+        // u(t) = c+bt
+        // u`(t) = b
+        if (Math.abs(b) <= epsilon)
+            //constant, parrallel, so no collision
+            return undefined;
+        else
+            if (b <= 0)//exiting
+                return undefined;
+            else
+                return -c / b;
+    else {
+        const det = b * b - 4 * a * c;
+        if (det <= 0)//misses or glances
+            return undefined;
+        //b+(-b±√(b^2-4ac)) > 0
+        //positive det
+        return (-b + Math.sqrt(det)) / (2 * a);
+    }
+}
+
+type ColList = Collideable | { o: Collideable, c: ColList };
+export type Collision = {
+    t: number,
+    a: ColList,
+    b: ColList,
+}
+function col(t: number, a: ColList, b: ColList, s: boolean) {
+    if (s)
+        return { t: t, a: b, b: a };
+    return { t: t, a: a, b: b };
+}
+function colParent(c: Collision, a: Collideable, s: boolean) {
+    if (s)
+        return { t: c.t, a: c.a, b: { o: a, c: c.b } };
+    return { t: c.t, a: { o: a, c: c.a }, b: c.b };
+}
+
+export interface Collideable {
+    collide: (o: Collideable, swap: boolean) => IterableIterator<Collision>;
+}
+export interface ComplexCol extends Collideable {
+    near: (v: Pointy, r: number) => boolean;//early rejection
+}
+
+export class ColPoint extends Line implements Collideable {
+    *collide(o: Collideable, swap = false): IterableIterator<Collision> {
+        if (!(o instanceof ColPoint)) {
+            if (o instanceof ColLine) {
+                const c = line_point_collide(o.a, o.b, this.a, this.b);
+                if (c != undefined)
+                    yield col(c, this, o, swap);
+            }
+            return o.collide(this, !swap);
+        }
+    }
+
+}
+
+export class ColLine implements Collideable {
+    constructor(public a: ColPoint, public b: ColPoint) { }
+    *collide(o: Collideable, swap = false): IterableIterator<Collision> {
+        if (o instanceof ColPoint) {
+            const c = line_point_collide(this.a, this.b, o.a, o.b);
+            if (c != undefined)
+                yield col(c, this, o, swap);
+        }
+        if (o instanceof ColLine) {
+            //filter out cases where lines are facing the same direction
+            function filt(t: number, me: ColLine, o: ColLine) {
+                return me.t(t).d.dot(o.t(t).d) <= 0;
+            }
+
+            for (let c of this.a.collide(o, swap))
+                if (filt(c.t, this, o))
+                    yield colParent(c, this, swap);
+            for (let c of this.b.collide(o, swap))
+                if (filt(c.t, this, o))
+                    yield colParent(c, this, swap);
+            for (let c of this.collide(o.a, swap))
+                if (filt(c.t, this, o))
+                    yield colParent(c, o, !swap);
+            for (let c of this.collide(o.b, swap))
+                if (filt(c.t, this, o))
+                    yield colParent(c, o, !swap);
+        }
+        return o.collide(this, !swap);
+    }
+    get d(): Line {
+        return this.b.minus(this.a);
+    }
+    set d(v: Line) {
+        this.b = v.plus(this.a) as ColPoint;
+    }
+
+    t(t: number): Line {
+        return new Line(this.a.t(t), this.b.t(t));
+    }
+
+}
+export class StaticLine extends Line implements Collideable {
+    constructor(a: Vec, b: Vec) { super(a, b); }
+    *collide(o: Collideable, swap = false): IterableIterator<Collision> {
+        if (o instanceof ColPoint) {
+            const c = line_point_collide(this, this, o.a, o.b);
+            if (c != undefined)
+                yield col(c, this, o, swap);
+        }
+        if (o instanceof ColLine) {
+            //filter out cases where lines are facing the same direction
+            function filt(t: number, me: StaticLine, o: ColLine) {
+                return me.d.dot(o.t(t).d) <= 0;
+            }
+            for (let c of this.collide(o.a, swap))
+                if (filt(c.t, this, o))
+                    yield colParent(c, o, !swap);
+            for (let c of this.collide(o.b, swap))
+                if (filt(c.t, this, o))
+                    yield colParent(c, o, !swap);
+        }
+        if (o instanceof StaticLine) {
+            return;
+        }
+        return o.collide(this, !swap);
+    }
+
+    t(t: number): Vec {
+        return this.a.lerp(this.b, t);
+    }
+
+}
+
+export class PolyCol implements Collideable {
+    constructor(public cols: Collideable[]) { }
+    *collide(o: Collideable, swap = false): IterableIterator<Collision> {
+        for (let thing of this.cols) {
+            for (let c of thing.collide(o, swap)) {
+                yield colParent(c, this, swap);
+            }
+        }
+    }
+}
+
+
+
+/*
 var COLISION_EPSILON = 0;
+//*
+interface Collision {
+    //a: Collidable,
+    //b: Collidable,
+    line: Line,
+}
+ 
+enum CollisionProperty {
+    ENVIRONMENT,
+    ENTITY,
+}
+ 
+interface Collidable {
+    check(other: Collidable): Collision | undefined;
+}
+ 
+class CompositeCollidable implements Collidable {
+ 
+    constructor(private collidables: Collidable[]) { }
+ 
+    check(other: Collidable): Collision | undefined {
+        for (const collidable of this.collidables) {
+            const maybeCollision = collidable.check(other);
+            if (maybeCollision) {
+                return maybeCollision;
+            }
+        }
+        return undefined;
+    }
+}
+ 
+class LineSegmentCollidable implements Collidable {
+    constructor(private line: Line) { }
+ 
+    check(other: Collidable): Collision | undefined {
+        if (other instanceof LineSegmentCollidable) {
+            const intersection = this.line.st(other.line);
+            if (intersection.between(new Vec(0, 0), new Vec(1, 1))) {
+                return {
+                    a: this,
+                    b: other,
+                }
+            }
+        }
+        return other.check(this);
+    }
+}
+ 
+class CollisionHandler {
+    constructor(private collidables = new Set<Collidable>()) { }
+ 
+    check
+}
+* /
+ 
 function collide_w_origin(a: Vec, b: Vec, c: Vec, d: Vec): Vec | undefined {
     //returns s,t coords of the earlier colision if exists
     //if (a.isZero()) return new Vec(0,0);
     //if (b.isZero()) return new Vec(1,0);
     //if (c.isZero()) return new Vec(0,1);
     //if (d.isZero()) return new Vec(1,1);
-	/*
-	  the math:
-	  s,t such that (a+(c-a)t) + ((b+(d-b)t)-(a+(c-a)t))s = 0
-	  and s,t in [0,1]^2
-	  
-	  a + ct - at + bs + dts - bts - as - cts + ats = 0
-	  let A,B,C,D = a,b-a,c-a,d-b-(c-a)
-	  
-	  (A+Ct) + (B+Dt)s = 0
-	  A + Bs + Ct + Dst = 0
-	  
-	  Ax + Bx s + Cx t + Dx st = 0
-	  Ay + By s + Cy t + Dy st = 0
-	  
-	  Ax + Bx s + Cx t + Dx st = Ay + By s + Cy t + Dy st = 0
-	  
-	  eh...
-	  another approach:
-	  
-	  let P,Q = a+(c-a)t,(b+(d-b)t) - (a+(c-a)t)
-	          = A+Ct    ,B+Dt
-	   the line becomes P+Qs = 0
-	   solution exists iff PxQ = 0
-			solution is s = -P•P/(Q•P)
-			condition is  PxQy = QxPy
-		
-		(Ax+tCx)(By+tDy) = (Bx+tDx)(Ay+tCy)
-		(AxBy-BxAy) + t((CxBy+AxDy)-(CyBx+AyDx))+t^2(CxDy-DxCy) = 0
-	*/
+    /*
+      the math:
+      s,t such that (a+(c-a)t) + ((b+(d-b)t)-(a+(c-a)t))s = 0
+      and s,t in [0,1]^2
+      
+      a + ct - at + bs + dts - bts - as - cts + ats = 0
+      let A,B,C,D = a,b-a,c-a,d-b-(c-a)
+      
+      (A+Ct) + (B+Dt)s = 0
+      A + Bs + Ct + Dst = 0
+      
+      Ax + Bx s + Cx t + Dx st = 0
+      Ay + By s + Cy t + Dy st = 0
+      
+      Ax + Bx s + Cx t + Dx st = Ay + By s + Cy t + Dy st = 0
+      
+      eh...
+      another approach:
+      
+      let P,Q = a+(c-a)t,(b+(d-b)t) - (a+(c-a)t)
+              = A+Ct    ,B+Dt
+       the line becomes P+Qs = 0
+       solution exists iff PxQ = 0
+            solution is s = -P•P/(Q•P)
+            condition is  PxQy = QxPy
+    	
+        (Ax+tCx)(By+tDy) = (Bx+tDx)(Ay+tCy)
+        (AxBy-BxAy) + t((CxBy+AxDy)-(CyBx+AyDx))+t^2(CxDy-DxCy) = 0
+    * /
     const A = a;
     const B = b.minus(a);
     const C = c.minus(a);
@@ -50,7 +291,7 @@ function collide_w_origin(a: Vec, b: Vec, c: Vec, d: Vec): Vec | undefined {
     const qA = C.cross(D);
     const qB = C.cross(B) - A.cross(D);
     const qC = A.cross(B);
-
+ 
     if (Math.abs(qA) <= COLISION_EPSILON) { //linear
         if (Math.abs(qB) <= COLISION_EPSILON) { //constant
             if (Math.abs(qC) <= COLISION_EPSILON) { //zero
@@ -64,7 +305,7 @@ function collide_w_origin(a: Vec, b: Vec, c: Vec, d: Vec): Vec | undefined {
                     //find first intersection with zero of a->c or b->d
                     const qAC = A.cross(C);
                     const qD = b.cross(dmb);
-
+ 
                     const asd = C.dot(A);
                     const bsd = dmb.dot(b);
                     if (Math.abs(qAC) > COLISION_EPSILON || Math.abs(asd) <= COLISION_EPSILON) {
@@ -137,7 +378,7 @@ function collide_w_origin(a: Vec, b: Vec, c: Vec, d: Vec): Vec | undefined {
     }
     const rd = Math.abs(Math.sqrt(det) / 2 / qA);
     const m = -qB / qA;
-
+ 
     if (m - rd > 1) {
         return undefined;
     }
@@ -234,12 +475,12 @@ function collideLines(l1: Vec, l2: Vec, l1n: Vec, l2n: Vec, l3: Vec, l4: Vec, l3
         return [best.y, 0, best.x];
     return [best.y, 1, best.x];
 }
+*/
 
 
-//colision shapes are polylines
-interface Collidable {
 
-}
+
+
 
 // for static shapes, they can be stored as sets of convexhulls for speed
 
@@ -365,7 +606,4 @@ class Convexhull {
 
 
 
-export {
-    collideLines, collide, Collidable
 
-}

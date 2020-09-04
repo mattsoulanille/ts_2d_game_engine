@@ -4,7 +4,8 @@ enum InputType {
     MouseDown,
     MouseUp,
     MouseMove,
-    MouseWheel
+    MouseWheel,
+    MouseClick
 }
 interface Input {
     t: InputType;
@@ -25,6 +26,7 @@ class InputListener {
         this.boundMouseMove = this.mouseMoveCallback.bind(this);
         this.boundMouseUp = this.mouseUpCallback.bind(this);
         this.boundMouseWheel = this.mouseWheelCallback.bind(this);
+        this.boundMouseClick = this.mouseClickCallback.bind(this);
     }
     clear() {
         this.inputs = [];
@@ -35,6 +37,7 @@ class InputListener {
     boundMouseMove: (me: MouseEvent) => void;
     boundMouseUp: (me: MouseEvent) => void;
     boundMouseWheel: (me: MouseEvent) => void;
+    boundMouseClick: (me: MouseEvent) => void;
     keyDownCallback(ke: KeyboardEvent): void {
         this.inputs.push(new EventInput(InputType.KeyDown, ke))
     }
@@ -53,14 +56,25 @@ class InputListener {
     mouseWheelCallback(me: MouseEvent): void {
         this.inputs.push(new EventInput(InputType.MouseWheel, me));
     }
-    attach(d: Document) {
+    mouseClickCallback(me: MouseEvent): void {
+        this.inputs.push(new EventInput(InputType.MouseClick, me));
+    }
+    attach(d: Document, mask = -1) {
         this.doc = d;
-        d.addEventListener("keydown", this.boundKeyDown);
-        d.addEventListener("keyup", this.boundKeyUp);
-        d.addEventListener("mousemove", this.boundMouseMove);
-        d.addEventListener("mousedown", this.boundMouseDown);
-        d.addEventListener("mouseup", this.boundMouseUp);
-        d.addEventListener("wheel", this.boundMouseWheel);
+        if (mask & 1)
+            d.addEventListener("keydown", this.boundKeyDown);
+        if (mask & 2)
+            d.addEventListener("keyup", this.boundKeyUp);
+        if (mask & 4)
+            d.addEventListener("mousemove", this.boundMouseMove);
+        if (mask & 8)
+            d.addEventListener("mousedown", this.boundMouseDown);
+        if (mask & 0x10)
+            d.addEventListener("mouseup", this.boundMouseUp);
+        if (mask & 0x20)
+            d.addEventListener("wheel", this.boundMouseWheel);
+        if (mask & 0x40)
+            d.addEventListener("click", this.boundMouseClick);
     }
     detach() {
         const d = this.doc;
@@ -72,6 +86,7 @@ class InputListener {
             d.removeEventListener("mousedown", this.boundMouseDown);
             d.removeEventListener("mouseup", this.boundMouseUp);
             d.removeEventListener("wheel", this.boundMouseWheel);
+            d.removeEventListener("click", this.boundMouseClick);
         }
         return d;
     }
